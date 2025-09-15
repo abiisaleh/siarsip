@@ -1,0 +1,39 @@
+<?php
+
+namespace App\Filament\Widgets;
+
+use Filament\Widgets\Widget;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Number;
+
+class DiskStatus extends Widget
+{
+    protected static string $view = 'filament.widgets.disk-status';
+
+    // public properties available to the blade view
+    public string $totalHuman = '0 B';
+    public string $freeHuman = '0 B';
+    public string $usedHuman = '0 B';
+    public float $percentUsed = 0.0;
+
+    public function mount(): void
+    {
+        // get path for the 'public' disk (change disk if needed)
+        $path = Storage::disk('public')->path('/');
+
+        // fallback to storage path if Storage didn't return a path
+        if ($path === null) {
+            $path = storage_path('app/public');
+        }
+
+        $total = @disk_total_space($path) ?: 0;
+        $free = @disk_free_space($path) ?: 0;
+        $used = max(0, $total - $free);
+
+        $this->totalHuman = Number::fileSize($total);
+        $this->freeHuman = Number::fileSize($free);
+        $this->usedHuman = Number::fileSize($used);
+
+        $this->percentUsed = $total > 0 ? round(($used / $total) * 100, 2) : 0.0;
+    }
+}
