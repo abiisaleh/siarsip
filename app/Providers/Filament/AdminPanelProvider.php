@@ -19,6 +19,11 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use DutchCodingCompany\FilamentSocialite\FilamentSocialitePlugin;
+use DutchCodingCompany\FilamentSocialite\Provider;
+use Filament\Support\Colors;
+use Laravel\Socialite\Contracts\User as SocialiteUserContract;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -39,7 +44,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
-                Widgets\AccountWidget::class,
+                // Widgets\AccountWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -57,6 +62,21 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->profile()
             ->topNavigation()
-            ->spa();
+            ->spa()
+            ->plugin(
+                FilamentSocialitePlugin::make()
+                    // (required) Add providers corresponding with providers in `config/services.php`.
+                    ->providers([
+                        // Create a provider 'gitlab' corresponding to the Socialite driver with the same name.
+                        Provider::make('google')
+                            ->label('Google')
+                            ->icon('fab-google')
+                            ->color(Color::Sky)
+                            ->outlined(false)
+                            ->stateless(false)
+                            ->scopes(['...'])
+                            ->with(['...']),
+                    ])
+            );
     }
 }

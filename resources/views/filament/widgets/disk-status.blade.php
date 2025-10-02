@@ -14,8 +14,8 @@
                     </div>
                 </div>
 
-                <div style="height: 1rem; background: rgba(0, 0, 0, 0.10)" class="flex rounded overflow-hidden">
-                    <div style="width: {{$this->percentUsed}}%; background: rgb(245, 54, 54)" class="flex flex-col text-center"></div>
+                <div style="height: 1rem;" class="flex rounded overflow-hidden bg-gray-50 dark:bg-gray-950">
+                    <div style="width: {{$this->percentUsed}}%;" class="bg-primary-600 dark:bg-primary-500 flex flex-col text-center"></div>
                 </div>  
             </div>
         </div>

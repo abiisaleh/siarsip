@@ -7,10 +7,13 @@ use App\Models\Dokumen;
 use Filament\Actions;
 use Filament\Actions\Action;
 use Filament\Forms;
+use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ManageRecords;
+use Filament\Resources\Resource;
 use FilippoToso\PdfWatermarker\Facades\ImageWatermarker;
 use FilippoToso\PdfWatermarker\Facades\TextWatermarker;
 use FilippoToso\PdfWatermarker\Support\Position;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\TemplateProcessor;
 use setasign\Fpdi\Fpdi;
@@ -20,19 +23,15 @@ class ManageDokumens extends ManageRecords
 {
     protected static string $resource = DokumenResource::class;
 
-    protected function getHeaderWidgets(): array
-    {
-        return [
-            DokumenResource\Widgets\DokumenStats::class
-        ];
-    }
-
     protected function getHeaderActions(): array
     {
         return [
             Actions\Action::make('upload')
                 ->form([
                     Forms\Components\TextInput::make('file_name'),
+                    Forms\Components\TagsInput::make('tags')
+                        ->suggestions(fn() => Dokumen::all()->pluck('tags')->flatten()->unique())
+                        ->required(),
                     Forms\Components\FileUpload::make('file_path')
                         ->hint('supported file type : *.pdf')
                         ->acceptedFileTypes(['application/pdf'])
@@ -114,6 +113,7 @@ class ManageDokumens extends ManageRecords
                             'user_id' => $user,
                             'file_path' => $outRelative,
                             'file_name' => $data['file_name'] ?? $originalName,
+                            'tags' => json_encode($data['tags']),
                             'page_count' => $pageCount,
                             'created_at' => now(),
                             'updated_at' => now(),
@@ -124,70 +124,95 @@ class ManageDokumens extends ManageRecords
                 })
                 ->successNotificationTitle('Files uploaded successfully!')
                 ->label('Upload')
+                ->icon('heroicon-m-arrow-up-tray')
                 ->modalWidth('md')
                 ->modalHeading('Upload file')
                 ->modalSubmitActionLabel('Upload'),
-            Actions\ActionGroup::make([
-                Actions\Action::make('laporan'),
-                Actions\Action::make('berita_acara')
-                    ->modalWidth('md')
-                    ->form([
-                        Forms\Components\TextInput::make('nomor')
-                            ->required()
-                            ->label('Nomor BA')
-                    ])
-                    ->action(function (array $data) {
-                        // prepare data rows (ganti query sesuai kebutuhan)
-                        $query = Dokumen::query()->whereDate('created_at', now()->today());
+            Actions\Action::make('print_report')
+                ->modalWidth('md')
+                ->form([
+                    Forms\Components\Select::make('tahun')
+                        ->native(false)
+                        ->searchable()
+                        ->required()
+                        ->options(function () {
+                            $startYear = 2024;
+                            $endYear = now()->year;
+                            for ($i = $startYear; $i <= $endYear; $i++)
+                                $options[$i] = $i;
 
-                        // save to db
-                        $query->update(['nomor_ba' => $data['nomor']]);
+                            return $options;
+                        }),
+                    Forms\Components\Select::make('triwulan')
+                        ->native(false)
+                        ->required()
+                        ->options([
+                            '1' => 'TW 1 (Januari, Februari, Maret)',
+                            '2' => 'TW 2 (April, Mei, Juni)',
+                            '3' => 'TW 3 (Juli, Agustus, September)',
+                            '4' => 'TW 4 (Oktober, November, Desember)',
+                        ]),
+                ])
+                ->action(function (array $data) {
+                    // prepare data rows (ganti query sesuai kebutuhan)
+                    $query = Dokumen::query()->whereDate('created_at', $data['tanggal']);
 
-                        // generate word document
-                        $templatePath = 'asset/template-ba.docx';
+                    // save to db
+                    $query->update(['nomor_ba' => $data['nomor']]);
 
-                        // load template
-                        $tp = new TemplateProcessor($templatePath);
+                    // generate word document
+                    $templatePath = 'asset/template-ba.docx';
 
-                        $rows = $query->get()->toArray();
+                    // load template
+                    $tp = new TemplateProcessor($templatePath);
 
-                        $count = count($rows);
-                        if ($count > 0) {
-                            $tp->cloneRow('no', $count);
+                    $rows = $query->get()->toArray();
 
-                            foreach ($rows as $i => $row) {
-                                $idx = $i + 1;
-                                $tp->setValue("no#{$idx}", $idx);
-                                $tp->setValue("file-name#{$idx}", $row['file_name']);
-                                $tp->setValue("page#{$idx}", $row['page_count']);
-                                $tp->setValue("created-at#{$idx}", date_create($row['created_at'])->format('d F Y'));
-                            }
+                    $count = count($rows);
+                    if ($count > 0) {
+                        $tp->cloneRow('no', $count);
+
+                        foreach ($rows as $i => $row) {
+                            $idx = $i + 1;
+                            $tp->setValue("no#{$idx}", $idx);
+                            $tp->setValue("file-name#{$idx}", $row['file_name']);
+                            $tp->setValue("page#{$idx}", $row['page_count']);
+                            $tp->setValue("created-at#{$idx}", date_create($row['created_at'])->format('d F Y'));
                         }
+                    }
 
-                        // tambahan field dari form
-                        $today = now();
-                        $today->setLocale('id');
+                    // tambahan field dari form
+                    $today = now();
+                    $today->setLocale('id');
 
-                        $tp->setValue('nomor', $data['nomor']);
-                        $tp->setValue('date', $today->format('d F Y'));
+                    $tp->setValue('nomor', $data['nomor']);
+                    $tp->setValue('date', $today->format('d F Y'));
 
-                        // simpan file hasil generate ke storage/public/generated/
-                        $outDir = storage_path('app/public/generated');
-                        if (!file_exists($outDir)) {
-                            mkdir($outDir, 0755, true);
-                        }
-                        $outName = 'ba_' . now()->format('Ymd_His') . '.docx';
-                        $outPath = $outDir . '/' . $outName;
-                        $tp->saveAs($outPath);
+                    // simpan file hasil generate ke storage/public/generated/
+                    $outDir = storage_path('app/public/generated');
+                    if (!file_exists($outDir)) {
+                        mkdir($outDir, 0755, true);
+                    }
+                    $outName = 'ba_' . now()->format('Ymd_His') . '.docx';
+                    $outPath = $outDir . '/' . $outName;
+                    $tp->saveAs($outPath);
 
-                        // simpan path ke DB bila perlu, atau biarkan user download
-                        return response()->download($outPath)->deleteFileAfterSend(true);
-                    }),
-            ])
-                ->label('Print')
-                ->button()
+                    // simpan path ke DB bila perlu, atau biarkan user download
+                    return response()->download($outPath)->deleteFileAfterSend(true);
+                })
                 ->icon('heroicon-m-printer')
-                ->color('success')
+                ->color('info')
+        ];
+    }
+
+    public function getTabs(): array
+    {
+        return [
+            'semua' => Tab::make(),
+            'belum diarsip' => Tab::make()
+                ->modifyQueryUsing(fn(Builder $query) => $query->where('nomor_ba', null)),
+            'sudah diarsip' => Tab::make()
+                ->modifyQueryUsing(fn(Builder $query) => $query->whereNot('nomor_ba', null)),
         ];
     }
 }

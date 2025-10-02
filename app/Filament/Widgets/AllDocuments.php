@@ -1,75 +1,54 @@
 <?php
 
-namespace App\Filament\Resources;
+namespace App\Filament\Widgets;
 
-use App\Filament\Resources\DokumenResource\Pages;
-use App\Filament\Resources\DokumenResource\RelationManagers;
 use App\Models\Dokumen;
 use Carbon\Carbon;
-use Filament\Forms;
-use Filament\Forms\Form;
-use Filament\Resources\Resource;
 use Filament\Support\Colors\Color;
+use Filament\Forms;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Widgets\TableWidget as BaseWidget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use PhpOffice\PhpWord\TemplateProcessor;
 
-class DokumenResource extends Resource
+class AllDocuments extends BaseWidget
 {
-    protected static ?string $model = Dokumen::class;
+    protected int | string | array $columnSpan = 'full';
 
-    protected static ?string $pluralLabel = 'My Documents';
+    protected static ?int $sort = 2;
 
-    protected static ?string $navigationIcon = 'heroicon-s-folder-open';
-
-    public static function form(Form $form): Form
+    public function is_admin(): bool
     {
-        return $form
-            ->schema([
-                Forms\Components\Group::make([
-                    Forms\Components\TextInput::make('file_name')
-                        ->required(),
-                    Forms\Components\TagsInput::make('tags')
-                        ->suggestions(fn() => Dokumen::all()->pluck('tags')->flatten()->unique())
-                        ->required(),
-                ]),
-                Forms\Components\Group::make([
-                    Forms\Components\TextInput::make('nomor_ba')->label('Nomor BA'),
-                    Forms\Components\TextInput::make('nama_arsip'),
-                    Forms\Components\Textarea::make('desc')->columnSpanFull(),
-                ])->columns(2),
-                Forms\Components\FileUpload::make('file_path')
-                    ->required()
-                    ->label('File')
-                    ->hiddenOn('edit')
-                    ->previewable(false)
-                    ->storeFileNamesIn('file_name')
-                    ->directory(fn() => now()->year . '/TW' . now()->quarter)
-                    ->multiple(),
-            ]);
+        return filament()->auth()->id() == 1;
     }
 
-    public static function table(Table $table): Table
+    public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn(Builder $query) => $query->where('user_id', filament()->auth()->id()))
+            ->query(
+                Dokumen::orderBy('created_at', 'desc')
+            )
             ->columns([
                 Tables\Columns\TextColumn::make('file_name')
                     ->searchable()
-                    ->sortable()
                     ->icon('heroicon-c-document-text')
                     ->iconColor(Color::Red),
                 Tables\Columns\TextColumn::make('tags')
+                    ->searchable()
                     ->badge(),
                 Tables\Columns\TextColumn::make('size'),
+                Tables\Columns\ImageColumn::make('user.avatar')
+                    ->tooltip(fn($record) => $record->user->name)
+                    ->circular(),
+                Tables\Columns\TextColumn::make('uploaded')
+                    ->state(fn($record) => $record->created_at)
+                    ->since(),
                 Tables\Columns\TextColumn::make('created_at')
-                    ->sortable(),
+                    ->toggleable()
+                    ->toggledHiddenByDefault()
             ])
             ->filters([
                 Tables\Filters\Filter::make('Periode')
@@ -116,10 +95,11 @@ class DokumenResource extends Resource
                         function () {
                             $tags = Dokumen::all()->pluck('tags')->flatten()->unique();
 
-                            foreach ($tags as $tag)
+                            foreach ($tags as $tag) {
                                 $options[$tag] = $tag;
+                            }
 
-                            return $options ?? [];
+                            return $options;
                         }
                     )
                     ->query(function (Builder $query, array $data) {
@@ -129,7 +109,8 @@ class DokumenResource extends Resource
                             }
                         return $query;
                     }),
-                Tables\Filters\TrashedFilter::make(),
+                Tables\Filters\TrashedFilter::make()
+                    ->visible($this->is_admin()),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -139,7 +120,19 @@ class DokumenResource extends Resource
                         ->color('success')
                         ->action(fn(Dokumen $record) => Storage::disk('public')->download($record->file_path)),
                     Tables\Actions\EditAction::make()
-                        ->color('warning'),
+                        ->form([
+                            Forms\Components\Group::make([
+                                Forms\Components\TextInput::make('file_name')
+                                    ->required(),
+                                Forms\Components\TagsInput::make('tags')
+                                    ->suggestions(fn() => Dokumen::all()->pluck('tags')->flatten()->unique())
+                                    ->required(),
+                                Forms\Components\TextInput::make('nama_arsip'),
+                                Forms\Components\Textarea::make('desc'),
+                            ])
+                        ])
+                        ->color('warning')
+                        ->modalWidth('md'),
                     Tables\Actions\DeleteAction::make(),
                     Tables\Actions\ForceDeleteAction::make()
                         ->after(function (Dokumen $record) {
@@ -150,8 +143,7 @@ class DokumenResource extends Resource
                             }
                         }),
                     Tables\Actions\RestoreAction::make()
-
-                ])
+                ])->visible($this->is_admin())
             ])
             ->bulkActions([
                 Tables\Actions\BulkAction::make('download_selected')
@@ -178,66 +170,6 @@ class DokumenResource extends Resource
 
                         return response()->download($zipPath)->deleteFileAfterSend(true);
                     }),
-
-                Tables\Actions\BulkAction::make('archieve_selected')
-                    ->modalWidth('md')
-                    ->form([
-                        Forms\Components\TextInput::make('nomor')
-                            ->required()
-                            ->label('Nomor BA'),
-                        Forms\Components\TextInput::make('nama_arsip')
-                            ->required(),
-                        Forms\Components\Textarea::make('desc')
-                    ])
-                    ->action(function (array $data) {
-                        // prepare data rows (ganti query sesuai kebutuhan)
-                        $query = Dokumen::query()->whereDate('created_at', $data['tanggal']);
-
-                        // save to db
-                        $query->update(['nomor_ba' => $data['nomor']]);
-
-                        // generate word document
-                        $templatePath = 'asset/template-ba.docx';
-
-                        // load template
-                        $tp = new TemplateProcessor($templatePath);
-
-                        $rows = $query->get()->toArray();
-
-                        $count = count($rows);
-                        if ($count > 0) {
-                            $tp->cloneRow('no', $count);
-
-                            foreach ($rows as $i => $row) {
-                                $idx = $i + 1;
-                                $tp->setValue("no#{$idx}", $idx);
-                                $tp->setValue("file-name#{$idx}", $row['file_name']);
-                                $tp->setValue("page#{$idx}", $row['page_count']);
-                                $tp->setValue("created-at#{$idx}", date_create($row['created_at'])->format('d F Y'));
-                            }
-                        }
-
-                        // tambahan field dari form
-                        $today = now();
-                        $today->setLocale('id');
-
-                        $tp->setValue('nomor', $data['nomor']);
-                        $tp->setValue('date', $today->format('d F Y'));
-
-                        // simpan file hasil generate ke storage/public/generated/
-                        $outDir = storage_path('app/public/generated');
-                        if (!file_exists($outDir)) {
-                            mkdir($outDir, 0755, true);
-                        }
-                        $outName = 'ba_' . now()->format('Ymd_His') . '.docx';
-                        $outPath = $outDir . '/' . $outName;
-                        $tp->saveAs($outPath);
-
-                        // simpan path ke DB bila perlu, atau biarkan user download
-                        return response()->download($outPath)->deleteFileAfterSend(true);
-                    })
-                    ->icon('heroicon-m-archive-box-arrow-down')
-                    ->color('info'),
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                     Tables\Actions\ForceDeleteBulkAction::make()
@@ -251,26 +183,9 @@ class DokumenResource extends Resource
                             }
                         }),
                     Tables\Actions\RestoreBulkAction::make()
-                ]),
+
+                ])->visible($this->is_admin()),
             ])
-            ->recordUrl(fn(Dokumen $record) => Storage::disk('public')->url($record->file_path), true)
-            ->defaultSort('created_at', 'desc');
-    }
-
-    public static function getPages(): array
-    {
-        return [
-            'index' => Pages\ManageDokumens::route('/'),
-        ];
-    }
-
-    public static function canForceDelete(Model $record): bool
-    {
-        return filament()->auth()->id() == 1;
-    }
-
-    public static function canForceDeleteAny(): bool
-    {
-        return filament()->auth()->id() == 1;
+            ->recordUrl(fn(Dokumen $record) => Storage::disk('public')->url($record->file_path), true);
     }
 }

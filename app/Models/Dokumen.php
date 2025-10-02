@@ -4,11 +4,18 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Number;
 
 class Dokumen extends Model
 {
+    use SoftDeletes;
+
+    protected $casts = [
+        'tags' => 'array',
+    ];
+
     public function getIconAttribute()
     {
         $extension = pathinfo($this->file_name, PATHINFO_EXTENSION);

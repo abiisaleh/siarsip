@@ -17,11 +17,13 @@ return new class extends Migration
             $table->foreignIdFor(User::class)->nullable()->constrained()->nullOnDelete();
             $table->string('file_path');
             $table->string('file_name');
+            $table->json('tags');
             $table->string('page_count');
             $table->string('nomor_ba')->nullable();
             $table->string('nama_arsip')->nullable();
             $table->string('desc')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

@@ -8,6 +8,8 @@ use Illuminate\Support\Number;
 
 class DiskStatus extends Widget
 {
+    protected static ?int $sort = 1;
+
     protected static string $view = 'filament.widgets.disk-status';
 
     // public properties available to the blade view
