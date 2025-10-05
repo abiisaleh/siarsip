@@ -62,21 +62,21 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->profile()
             ->topNavigation()
-            ->spa()
-            ->plugin(
-                FilamentSocialitePlugin::make()
-                    // (required) Add providers corresponding with providers in `config/services.php`.
-                    ->providers([
-                        // Create a provider 'gitlab' corresponding to the Socialite driver with the same name.
-                        Provider::make('google')
-                            ->label('Google')
-                            ->icon('fab-google')
-                            ->color(Color::Sky)
-                            ->outlined(false)
-                            ->stateless(false)
-                            ->scopes(['...'])
-                            ->with(['...']),
-                    ])
-            );
+            ->spa();
+        // ->plugin(
+        //     FilamentSocialitePlugin::make()
+        //         // (required) Add providers corresponding with providers in `config/services.php`.
+        //         ->providers([
+        //             // Create a provider 'gitlab' corresponding to the Socialite driver with the same name.
+        //             Provider::make('google')
+        //                 ->label('Google')
+        //                 ->icon('fab-google')
+        //                 ->color(Color::Sky)
+        //                 ->outlined(false)
+        //                 ->stateless(false)
+        //                 ->scopes(['...'])
+        //                 ->with(['...']),
+        //         ])
+        // );
     }
 }
